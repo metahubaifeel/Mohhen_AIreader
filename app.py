@@ -17,7 +17,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 自定义CSS样式
+# 自定义CSS样式 + 文本选中菜单和悬浮卡片样式
 st.markdown("""
 <style>
 .main {
@@ -74,7 +74,300 @@ st.markdown("""
     background-color: #cce5ff;
     color: #004085;
 }
+
+/* 文本选中浮动菜单样式 */
+.selection-menu {
+    position: absolute;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    padding: 8px;
+    z-index: 1000;
+    display: none;
+}
+
+.selection-menu button {
+    background: #f8f9fc;
+    border: 1px solid #e1e5e9;
+    border-radius: 4px;
+    padding: 6px 12px;
+    margin: 0 2px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+}
+
+.selection-menu button:hover {
+    background: #e9ecef;
+    border-color: #adb5bd;
+}
+
+/* 悬浮AI问答卡片样式 */
+.floating-qa-card {
+    position: fixed;
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    padding: 20px;
+    z-index: 1001;
+    max-width: 400px;
+    width: 90vw;
+    max-height: 500px;
+    overflow-y: auto;
+    display: none;
+}
+
+.floating-qa-card .close-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: #f8f9fa;
+    border: none;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+}
+
+.floating-qa-card .qa-input {
+    width: 100%;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 10px;
+    margin-bottom: 10px;
+    resize: vertical;
+    min-height: 60px;
+}
+
+.floating-qa-card .qa-submit {
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.floating-qa-card .qa-submit:hover {
+    background: #0056b3;
+}
+
+.floating-qa-card .qa-loading {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+}
+
+.floating-qa-card .qa-answer {
+    background: #f8f9fa;
+    border-radius: 6px;
+    padding: 15px;
+    margin-top: 10px;
+    line-height: 1.6;
+}
 </style>
+
+<script>
+let selectionMenu = null;
+let floatingCard = null;
+let selectedText = '';
+let selectionRect = null;
+
+// 监听文本选中事件
+document.addEventListener('selectionchange', function() {
+    const selection = window.getSelection();
+    const text = selection.toString().trim();
+    
+    if (text && text.length > 0) {
+        selectedText = text;
+        try {
+            const range = selection.getRangeAt(0);
+            selectionRect = range.getBoundingClientRect();
+            showSelectionMenu();
+        } catch(e) {
+            console.log('获取选区位置失败:', e);
+        }
+    } else {
+        hideSelectionMenu();
+        selectedText = '';
+    }
+});
+
+// 显示选中文本菜单
+function showSelectionMenu() {
+    hideSelectionMenu(); // 先隐藏现有菜单
+    
+    selectionMenu = document.createElement('div');
+    selectionMenu.className = 'selection-menu';
+    selectionMenu.innerHTML = `
+        <button onclick="highlightText()">🟡 高亮</button>
+        <button onclick="annotateText()">🖍️ 标注</button>
+        <button onclick="askAI()">❓ 问一问</button>
+    `;
+    
+    // 计算菜单位置
+    const menuWidth = 180;
+    const menuHeight = 40;
+    let left = selectionRect.right + 5;
+    let top = selectionRect.top - 5;
+    
+    // 边界检查
+    if (left + menuWidth > window.innerWidth) {
+        left = selectionRect.left - menuWidth - 5;
+    }
+    if (top < 0) {
+        top = selectionRect.bottom + 5;
+    }
+    
+    selectionMenu.style.left = left + window.scrollX + 'px';
+    selectionMenu.style.top = top + window.scrollY + 'px';
+    selectionMenu.style.display = 'block';
+    
+    document.body.appendChild(selectionMenu);
+    
+    // 点击其他地方隐藏菜单
+    setTimeout(() => {
+        document.addEventListener('click', hideMenuOnClickOutside);
+    }, 100);
+}
+
+// 隐藏选中菜单
+function hideSelectionMenu() {
+    if (selectionMenu) {
+        selectionMenu.remove();
+        selectionMenu = null;
+        document.removeEventListener('click', hideMenuOnClickOutside);
+    }
+}
+
+// 点击外部区域隐藏菜单
+function hideMenuOnClickOutside(e) {
+    if (selectionMenu && !selectionMenu.contains(e.target)) {
+        hideSelectionMenu();
+    }
+}
+
+// 高亮文本功能
+function highlightText() {
+    if (selectedText) {
+        // 通过placeholder查找对应的输入框
+        const highlightInput = parent.document.querySelector('input[placeholder="高亮文本"]');
+        if (highlightInput) {
+            highlightInput.value = selectedText;
+            highlightInput.dispatchEvent(new Event('input', { bubbles: true }));
+            highlightInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        hideSelectionMenu();
+    }
+}
+
+// 标注文本功能
+function annotateText() {
+    if (selectedText) {
+        const annotation = prompt('请输入标注内容:');
+        if (annotation && annotation.trim()) {
+            // 通过placeholder查找对应的输入框
+            const textInput = parent.document.querySelector('input[placeholder="标注文本"]');
+            const annotationInput = parent.document.querySelector('input[placeholder="标注内容"]');
+            if (textInput && annotationInput) {
+                textInput.value = selectedText;
+                textInput.dispatchEvent(new Event('input', { bubbles: true }));
+                annotationInput.value = annotation.trim();
+                annotationInput.dispatchEvent(new Event('input', { bubbles: true }));
+                annotationInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+        hideSelectionMenu();
+    }
+}
+
+// AI问答功能
+function askAI() {
+    if (selectedText) {
+        showFloatingQACard();
+        hideSelectionMenu();
+    }
+}
+
+// 显示悬浮问答卡片
+function showFloatingQACard() {
+    hideFloatingCard(); // 先隐藏现有卡片
+    
+    floatingCard = document.createElement('div');
+    floatingCard.className = 'floating-qa-card';
+    floatingCard.innerHTML = `
+        <button class="close-btn" onclick="hideFloatingCard()">×</button>
+        <div style="margin-bottom: 15px; font-weight: bold; color: #333;">
+            💬 AI问答助手
+        </div>
+        <div style="margin-bottom: 10px; font-size: 14px; color: #666;">
+            选中文本: "${selectedText.substring(0, 50)}${selectedText.length > 50 ? '...' : ''}"
+        </div>
+        <textarea class="qa-input" placeholder="请输入您的问题（已自动填入选中文本作为上下文）" id="qaInput">${selectedText}</textarea>
+        <button class="qa-submit" onclick="submitQuestion()">提交问题</button>
+        <div id="qaResult"></div>
+    `;
+    
+    // 计算卡片位置
+    let left = selectionRect.right + 10;
+    let top = selectionRect.top;
+    
+    // 边界检查
+    if (left + 400 > window.innerWidth) {
+        left = Math.max(10, selectionRect.left - 410);
+    }
+    if (top + 300 > window.innerHeight) {
+        top = Math.max(10, window.innerHeight - 510);
+    }
+    
+    floatingCard.style.left = left + window.scrollX + 'px';
+    floatingCard.style.top = top + window.scrollY + 'px';
+    floatingCard.style.display = 'block';
+    
+    document.body.appendChild(floatingCard);
+}
+
+// 隐藏悬浮卡片
+function hideFloatingCard() {
+    if (floatingCard) {
+        floatingCard.remove();
+        floatingCard = null;
+    }
+}
+
+// 提交问题
+function submitQuestion() {
+    const input = document.getElementById('qaInput');
+    const question = input.value.trim();
+    const resultDiv = document.getElementById('qaResult');
+    
+    if (!question) {
+        alert('请输入问题');
+        return;
+    }
+    
+    // 显示加载状态
+    resultDiv.innerHTML = '<div class="qa-loading">🤖 AI正在思考中...</div>';
+    
+    // 通过placeholder查找对应的输入框
+    const questionInput = parent.document.querySelector('input[placeholder="AI问题"]');
+    const contextInput = parent.document.querySelector('input[placeholder="问题上下文"]');
+    if (questionInput && contextInput) {
+        questionInput.value = question;
+        questionInput.dispatchEvent(new Event('input', { bubbles: true }));
+        contextInput.value = selectedText;
+        contextInput.dispatchEvent(new Event('input', { bubbles: true }));
+        contextInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+}
+</script>
 """, unsafe_allow_html=True)
 
 # 初始化session state
@@ -186,7 +479,14 @@ def file_management():
     )
     
     if uploaded_file is not None:
-        if uploaded_file not in st.session_state.uploaded_files:
+        # 修复：使用文件名和大小判断是否已存在，避免重复添加
+        file_exists = any(
+            f['name'] == uploaded_file.name and 
+            len(f['content']) == len(uploaded_file.getvalue()) 
+            for f in st.session_state.uploaded_files
+        )
+        
+        if not file_exists:
             with st.spinner("正在处理PDF文件..."):
                 text_content = extract_text_from_pdf(uploaded_file)
                 if text_content:
@@ -269,6 +569,108 @@ def reading_interface():
     # 显示阅读进度
     st.progress(min(st.session_state.reading_position / len(paragraphs), 1.0))
     st.markdown("---")
+    
+    # 使用更简单可靠的方式：通过查询参数或会话状态处理选中文本操作
+    
+    # 检查URL参数中是否有选中文本操作
+    query_params = st.experimental_get_query_params()
+    
+    if 'highlight' in query_params:
+        text = query_params['highlight'][0]
+        if text and text not in [h['text'] for h in st.session_state.highlights]:
+            st.session_state.highlights.append({
+                'text': text,
+                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M")
+            })
+            st.success(f"✅ 已高亮: {text[:50]}...")
+            # 清除查询参数
+            st.experimental_set_query_params()
+    
+    # 添加隐藏的输入框用于接收前端操作
+    col_hidden1, col_hidden2, col_hidden3 = st.columns(3)
+    with col_hidden1:
+        highlight_input = st.text_input("", key="js_highlight", label_visibility="collapsed", placeholder="高亮文本")
+        if highlight_input and highlight_input not in [h['text'] for h in st.session_state.highlights]:
+            st.session_state.highlights.append({
+                'text': highlight_input,
+                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M")
+            })
+            st.success(f"✅ 已高亮选中文本")
+            st.session_state.js_highlight = ""
+            st.rerun()
+    
+    with col_hidden2:
+        annotate_input = st.text_input("", key="js_annotate", label_visibility="collapsed", placeholder="标注文本")
+        annotation_content = st.text_input("", key="js_annotation_content", label_visibility="collapsed", placeholder="标注内容")
+        if annotate_input and annotation_content:
+            st.session_state.annotations.append({
+                'text': annotate_input,
+                'annotation': annotation_content,
+                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M")
+            })
+            st.success(f"✅ 已添加标注")
+            st.session_state.js_annotate = ""
+            st.session_state.js_annotation_content = ""
+            st.rerun()
+    
+    with col_hidden3:
+        ai_question_input = st.text_input("", key="js_ai_question", label_visibility="collapsed", placeholder="AI问题")
+        ai_context_input = st.text_input("", key="js_ai_context", label_visibility="collapsed", placeholder="问题上下文")
+        if ai_question_input and ai_context_input:
+            with st.spinner("🤖 AI正在分析中..."):
+                answer = ask_ai(ai_question_input, ai_context_input)
+                st.session_state.qa_history.append({
+                    'question': ai_question_input,
+                    'answer': answer,
+                    'context': ai_context_input,
+                    'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M")
+                })
+                # 显示AI回答在悬浮卡片中
+                st.components.v1.html(f"""
+                <script>
+                // 更新悬浮卡片中的回答
+                function updateFloatingAnswer() {{
+                    const resultDiv = document.getElementById('qaResult');
+                    if (resultDiv) {{
+                        resultDiv.innerHTML = `
+                            <div class="qa-answer">
+                                <div style="font-weight: bold; margin-bottom: 8px;">🤖 AI回答:</div>
+                                <div>{answer.replace("'", "\\'").replace('"', '\\"')}</div>
+                            </div>
+                        `;
+                    }}
+                }}
+                // 延迟执行，确保DOM已加载
+                setTimeout(updateFloatingAnswer, 100);
+                </script>
+                """, height=0)
+            st.session_state.js_ai_question = ""
+            st.session_state.js_ai_context = ""
+            st.rerun()
+    
+    # 隐藏这些输入框
+    st.markdown("""
+    <style>
+    /* 隐藏用于JS通信的输入框 */
+    div[data-testid="column"]:has(input[placeholder="高亮文本"]) input,
+    div[data-testid="column"]:has(input[placeholder="标注文本"]) input,
+    div[data-testid="column"]:has(input[placeholder="标注内容"]) input,
+    div[data-testid="column"]:has(input[placeholder="AI问题"]) input,
+    div[data-testid="column"]:has(input[placeholder="问题上下文"]) input {
+        position: absolute !important;
+        left: -9999px !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }
+    
+    /* 隐藏包含这些输入框的列 */
+    div[data-testid="column"]:has(input[placeholder="高亮文本"]),
+    div[data-testid="column"]:has(input[placeholder="标注文本"]),
+    div[data-testid="column"]:has(input[placeholder="AI问题"]) {
+        display: none !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
     
     # 显示文本内容
     for i, paragraph in enumerate(paragraphs):
